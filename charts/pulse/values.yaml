@@ -1,0 +1,113 @@
+# Default values for Pulse Helm Chart
+# This is a YAML-formatted file.
+
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
+image:
+  repository: ghcr.io/pulse-platform/pulse
+  pullPolicy: IfNotPresent
+  tag: "" # Defaults to .Chart.AppVersion
+
+# Gateway Tier: Stateless WebSocket Terminator & Authentication
+gateway:
+  replicaCount: 3
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 75
+    targetMemoryUtilizationPercentage: 80
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+  service:
+    type: ClusterIP
+    wsPort: 32001
+    adminPort: 32003
+
+# Domain Cell Tier: Sharded Core Business Engine & Monotonic Sequencer
+cell:
+  replicas: 2
+  sharding:
+    totalPartitions: 32
+  resources:
+    limits:
+      cpu: 4000m
+      memory: 4Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  service:
+    type: ClusterIP
+    port: 32011
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 20Gi
+
+# Edge Ingress routing with WebSocket multiplexing
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/websocket-services: "pulse-gateway"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: pulse.example.com
+      paths:
+        - path: /ws
+          pathType: Prefix
+          service: gateway
+        - path: /api
+          pathType: Prefix
+          service: cell
+  tls:
+    - secretName: pulse-tls
+      hosts:
+        - pulse.example.com
+
+# Cluster Backbone Connections
+config:
+  postgres:
+    host: "postgres-cluster-rw.pulse.svc"
+    port: 5432
+    database: "pulse_production"
+    user: "pulse_app"
+    existingSecret: "pulse-db-credentials"
+    secretPasswordKey: "password"
+  nats:
+    url: "nats://nats-cluster.pulse.svc:4222"
+    streamName: "events.messages"
+    directoryKvBucket: "pulse_directory"
+  storage:
+    endpoint: "http://s3.pulse.svc:9000"
+    bucket: "pulse-media"
+    useSsl: false
+    existingSecret: "pulse-s3-credentials"
+    accessKeyKey: "access_key"
+    secretKeyKey: "secret_key"
+
+# Observability and Prometheus Metrics
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    namespace: ""
+    interval: 15s
+    scrapeTimeout: 10s
+  grafanaDashboard:
+    enabled: true
+    namespace: ""
+

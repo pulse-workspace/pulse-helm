@@ -1,0 +1,42 @@
+{{- if and .Values.metrics.enabled .Values.metrics.grafanaDashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pulse.fullname" . }}-grafana-dashboard
+  {{- if .Values.metrics.grafanaDashboard.namespace }}
+  namespace: {{ .Values.metrics.grafanaDashboard.namespace }}
+  {{- end }}
+  labels:
+    {{- include "pulse.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  pulse-overview.json: |
+    {
+      "title": "Pulse Cluster Telemetry",
+      "refresh": "5s",
+      "schemaVersion": 16,
+      "panels": [
+        {
+          "title": "Active WebSocket Connections",
+          "type": "stat",
+          "targets": [{ "expr": "sum(pulse_active_websocket_connections)" }]
+        },
+        {
+          "title": "Message Ingestion Rate (msg/s)",
+          "type": "graph",
+          "targets": [{ "expr": "sum(rate(pulse_messages_received_total[1m]))" }]
+        },
+        {
+          "title": "Cell Domain Processing Latency",
+          "type": "heatmap",
+          "targets": [{ "expr": "rate(pulse_cell_duration_seconds_bucket[5m])" }]
+        },
+        {
+          "title": "NATS JetStream Queue Lag",
+          "type": "gauge",
+          "targets": [{ "expr": "sum(pulse_nats_stream_lag_messages)" }]
+        }
+      ]
+    }
+{{- end }}
+

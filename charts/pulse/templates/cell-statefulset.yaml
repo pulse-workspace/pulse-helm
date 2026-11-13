@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "pulse.fullname" . }}-cell
+  labels:
+    {{- include "pulse.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cell
+spec:
+  serviceName: {{ include "pulse.fullname" . }}-cell
+  replicas: {{ .Values.cell.replicas }}
+  selector:
+    matchLabels:
+      {{- include "pulse.cellSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pulse.cellSelectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: cell
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["pulse", "cell", "--config", "/configs/pulse.yaml"]
+          ports:
+            - name: api
+              containerPort: {{ .Values.cell.service.port }}
+              protocol: TCP
+          env:
+            - name: PULSE_ROLE
+              value: "cell"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.postgres.existingSecret }}
+                  key: {{ .Values.config.postgres.secretPasswordKey }}
+            - name: STORAGE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.storage.existingSecret }}
+                  key: {{ .Values.config.storage.accessKeyKey }}
+            - name: STORAGE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.storage.existingSecret }}
+                  key: {{ .Values.config.storage.secretKeyKey }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: api
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: api
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+          resources:
+            {{- toYaml .Values.cell.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /configs
+              readOnly: true
+            {{- if .Values.cell.persistence.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "pulse.fullname" . }}-config
+  {{- if .Values.cell.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ {{ .Values.cell.persistence.accessMode | quote }} ]
+        {{- if .Values.cell.persistence.storageClass }}
+        storageClassName: {{ .Values.cell.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.cell.persistence.size | quote }}
+  {{- end }}
+

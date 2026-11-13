@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "pulse.fullname" . }}-cell
+  labels:
+    {{- include "pulse.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cell
+spec:
+  type: {{ .Values.cell.service.type }}
+  ports:
+    - name: api
+      port: {{ .Values.cell.service.port }}
+      targetPort: api
+      protocol: TCP
+  selector:
+    {{- include "pulse.cellSelectorLabels" . | nindent 4 }}
+
